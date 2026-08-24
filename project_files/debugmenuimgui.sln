@@ -7,12 +7,24 @@ Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
 		Release|Win32 = Release|Win32
+		Debug VC|Win32 = Debug VC|Win32
+		Release VC|Win32 = Release VC|Win32
+		Debug SA|Win32 = Debug SA|Win32
+		Release SA|Win32 = Release SA|Win32
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{3C95D4CD-2863-C8D3-11F7-38FAFD63A438}.Debug|Win32.ActiveCfg = Debug|Win32
 		{3C95D4CD-2863-C8D3-11F7-38FAFD63A438}.Debug|Win32.Build.0 = Debug|Win32
 		{3C95D4CD-2863-C8D3-11F7-38FAFD63A438}.Release|Win32.ActiveCfg = Release|Win32
 		{3C95D4CD-2863-C8D3-11F7-38FAFD63A438}.Release|Win32.Build.0 = Release|Win32
+		{3C95D4CD-2863-C8D3-11F7-38FAFD63A438}.Debug VC|Win32.ActiveCfg = Debug VC|Win32
+		{3C95D4CD-2863-C8D3-11F7-38FAFD63A438}.Debug VC|Win32.Build.0 = Debug VC|Win32
+		{3C95D4CD-2863-C8D3-11F7-38FAFD63A438}.Release VC|Win32.ActiveCfg = Release VC|Win32
+		{3C95D4CD-2863-C8D3-11F7-38FAFD63A438}.Release VC|Win32.Build.0 = Release VC|Win32
+		{3C95D4CD-2863-C8D3-11F7-38FAFD63A438}.Debug SA|Win32.ActiveCfg = Debug SA|Win32
+		{3C95D4CD-2863-C8D3-11F7-38FAFD63A438}.Debug SA|Win32.Build.0 = Debug SA|Win32
+		{3C95D4CD-2863-C8D3-11F7-38FAFD63A438}.Release SA|Win32.ActiveCfg = Release SA|Win32
+		{3C95D4CD-2863-C8D3-11F7-38FAFD63A438}.Release SA|Win32.Build.0 = Release SA|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

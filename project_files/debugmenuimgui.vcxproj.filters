@@ -2,6 +2,9 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="..\source\Main.cpp" />
+    <ClCompile Include="..\source\gui\config.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
     <ClCompile Include="..\source\gui\dx9hook.cpp">
       <Filter>gui</Filter>
     </ClCompile>
@@ -70,6 +73,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\source\gui\config.h">
+      <Filter>gui</Filter>
+    </ClInclude>
     <ClInclude Include="..\source\gui\dx9hook.h">
       <Filter>gui</Filter>
     </ClInclude>

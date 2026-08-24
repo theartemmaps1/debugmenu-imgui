@@ -263,6 +263,8 @@ public:
 			return (vars.F32);
 		case VAR_FLOAT64:
 			return (vars.F64);
+		default:
+			return 0;
 		}
 	}
 
@@ -349,6 +351,11 @@ public:
 
 	MenuEntry* GetEntryByName(std::string_view name);
 	void Process(void);
+	void Process(std::string_view filter);
+
+	// True if this entry's own name matches the filter, or (for pages) any entry
+	// nested inside it matches. Empty filter always matches. Case-insensitive.
+	bool MatchesFilter(std::string_view filter) const;
 };
 
 class debugmenu {
@@ -357,11 +364,14 @@ public:
 	bool m_bCanBeActivated;
 	static MenuEntry* m_sMainMenu;
 
+	char m_szSearchBuf[128];
+
 	debugmenu() :
 		m_bIsActive(false),
 		m_bCanBeActivated(false)
 	{
 		m_sMainMenu = new MenuEntry();
+		m_szSearchBuf[0] = '\0';
 	}
 
 	static MenuEntry& FindPageByName(std::string_view name);

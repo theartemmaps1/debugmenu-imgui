@@ -1,7 +1,10 @@
 #include "debugmenu.h"
 #include "gui/imgui/imgui.h"
+#include "gui/config.h"
 #include <functional>
 #include <algorithm>
+#include <cctype>
+#include <cfloat>
 
 debugmenu TheMenu;
 MenuEntry* debugmenu::m_sMainMenu;
@@ -28,10 +31,16 @@ MenuEntry& debugmenu::FindPageByName(std::string_view name)
 		pageNames.push_back(currentPageName);
 	}
 	MenuEntry* curMenuEntry = m_sMainMenu;
-	std::sort(m_sMainMenu->m_page.m_aEntriesInPage.begin(), m_sMainMenu->m_page.m_aEntriesInPage.end(), [](const MenuEntry& a, const MenuEntry& b)
-		{
-			return a.m_szName < b.m_szName;
-		});
+
+	static size_t s_lastSortedSize = 0;
+	if (m_sMainMenu->m_page.m_aEntriesInPage.size() != s_lastSortedSize)
+	{
+		std::sort(m_sMainMenu->m_page.m_aEntriesInPage.begin(), m_sMainMenu->m_page.m_aEntriesInPage.end(), [](const MenuEntry& a, const MenuEntry& b)
+			{
+				return a.m_szName < b.m_szName;
+			});
+		s_lastSortedSize = m_sMainMenu->m_page.m_aEntriesInPage.size();
+	}
 	std::string curPath;
 
 	for (size_t i = 0; i < pageNames.size(); ++i)
@@ -172,19 +181,61 @@ bool InputScalarWithMinMax(const char* label, ImGuiDataType dataType, VarTypes* 
 	return changed;
 }
 
+static bool CaseInsensitiveContains(std::string_view haystack, std::string_view needle)
+{
+	if (needle.empty())
+		return true;
+	auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
+		[](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); });
+	return it != haystack.end();
+}
+
+bool MenuEntry::MatchesFilter(std::string_view filter) const
+{
+	if (filter.empty())
+		return true;
+
+	auto nameWithoutPath = std::string_view(m_szName).substr(0, m_szName.find_first_of('#'));
+	if (CaseInsensitiveContains(nameWithoutPath, filter))
+		return true;
+
+	if (m_eType == ENTRY_MENU)
+	{
+		for (auto& entry : m_page.m_aEntriesInPage)
+		{
+			if (entry.MatchesFilter(filter))
+				return true;
+		}
+	}
+
+	return false;
+}
+
 void MenuEntry::Process()
 {
+	Process(std::string_view());
+}
+
+void MenuEntry::Process(std::string_view filter)
+{
+	if (!MatchesFilter(filter))
+		return;
+
 	switch (m_eType)
 	{
 	case ENTRY_MENU:
 		if (m_page.m_previousPage == debugmenu::m_sMainMenu)
 		{
+			// Force pages open while actively filtering so matches are visible without extra clicks.
+			if (!filter.empty())
+				ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+
 			if (ImGui::CollapsingHeader(m_szName.c_str()))
 			{
 				ImGui::Indent(10.0f);
 				for (auto& entry : m_page.m_aEntriesInPage)
 				{
-					entry.Process();
+					entry.Process(filter);
 				}
 				ImGui::Unindent(10.0f);
 			}
@@ -195,7 +246,7 @@ void MenuEntry::Process()
 			{
 				for (auto& entry : m_page.m_aEntriesInPage)
 				{
-					entry.Process();
+					entry.Process(filter);
 				}
 				ImGui::EndMenu();
 			}
@@ -215,13 +266,18 @@ void MenuEntry::Process()
 				ImGui::Text("%s: %.3f", m_szName.c_str(), m_entry.m_pVarPtr->F32);
 				break;
 			}
+			if (InputScalarWithMinMax(m_szName.c_str(), m_entry.m_eVarType, m_entry.m_pVarPtr,
+				m_entry.m_step, m_entry.m_lowerBound, m_entry.m_upperBound, m_entry.m_bWrap))
+				if (m_entry.m_func)
+					m_entry.m_func();
+			break;
 		case VAR_FLOAT64:
-			if (m_entry.m_step.F64 == 0.0f)
+			if (m_entry.m_step.F64 == 0.0)
 			{
 				ImGui::Text("%s: %.3lf", m_szName.c_str(), m_entry.m_pVarPtr->F64);
 				break;
 			}
-			if(InputScalarWithMinMax(m_szName.c_str(), m_entry.m_eVarType, m_entry.m_pVarPtr, 
+			if (InputScalarWithMinMax(m_szName.c_str(), m_entry.m_eVarType, m_entry.m_pVarPtr,
 				m_entry.m_step, m_entry.m_lowerBound, m_entry.m_upperBound, m_entry.m_bWrap))
 				if (m_entry.m_func)
 					m_entry.m_func();
@@ -229,7 +285,7 @@ void MenuEntry::Process()
 		default:
 			if (GetValueAsInt(m_entry.m_step) == 0)
 			{
-				ImGui::Text("%s: %lld", GetValueAsInt(*m_entry.m_pVarPtr));
+				ImGui::Text("%s: %lld", m_szName.c_str(), GetValueAsInt(*m_entry.m_pVarPtr));
 				break;
 			}
 
@@ -273,8 +329,16 @@ void debugmenu::Process()
 	ImGui::GetIO().MouseDrawCursor = true;
 	ImGui::Begin("Debugmenu", &m_bIsActive, ImGuiWindowFlags_None);
 
+	ImGui::SetNextItemWidth(-FLT_MIN);
+	ImGui::InputTextWithHint("##DebugMenuSearch", "Search...", m_szSearchBuf, sizeof(m_szSearchBuf));
+
+	ImGui::TextDisabled("Toggle menu: %s", DebugMenuConfig::Get().ToDisplayString().c_str());
+
+	ImGui::Separator();
+
+	std::string_view filter(m_szSearchBuf);
 	for (auto& entry : m_sMainMenu->m_page.m_aEntriesInPage)
-		entry.Process();
+		entry.Process(filter);
 
 	ImGui::End();
 }
@@ -333,7 +397,7 @@ EXPORT std::pair<std::string, std::string>* \
 		if (id)
 		{
 			auto entry = debugmenu::FindPageByName(id->first).GetEntryByName(id->second);
-			if (entry->m_eType == ENTRY_VAR)
+			if (entry && entry->m_eType == ENTRY_VAR)
 				entry->m_entry.m_bWrap = wrap;
 		}
 	}
@@ -343,7 +407,7 @@ EXPORT std::pair<std::string, std::string>* \
 		if (id)
 		{
 			auto entry = debugmenu::FindPageByName(id->first).GetEntryByName(id->second);
-			if (entry->m_eType == ENTRY_VAR)
+			if (entry && entry->m_eType == ENTRY_VAR)
 				entry->m_entry.m_aStrings = (char**)strings;
 		}
 	}
@@ -353,9 +417,41 @@ EXPORT std::pair<std::string, std::string>* \
 		if (id)
 		{
 			auto entry = debugmenu::FindPageByName(id->first).GetEntryByName(id->second);
-			if (entry->m_eType == ENTRY_VAR)
+			if (entry && entry->m_eType == ENTRY_VAR)
 				entry->m_entry.m_pVarPtr = addr;
 		}
+	}
+
+	// Frees an id returned by DebugMenuAdd*/DebugMenuAddCmd. Call this once you no longer
+	// need to modify the entry (e.g. on plugin unload, or right after setup if you never
+	// call DebugMenuEntrySet* again). Fixes a leak where every DebugMenuAdd* call
+	// heap-allocated an id with no corresponding free function.
+	EXPORT void DebugMenuFreeId(std::pair<std::string, std::string>* id)
+	{
+		delete id;
+	}
+
+	// Removes an entry (and, if it's a page, everything nested inside it) from the menu.
+	// Frees the id as part of removal, mirroring DebugMenuFreeId, so callers don't need
+	// to call both. Safe to call with nullptr.
+	EXPORT void DebugMenuRemoveEntry(std::pair<std::string, std::string>* id)
+	{
+		if (!id)
+			return;
+
+		auto& page = debugmenu::FindPageByName(id->first);
+		auto& entries = page.m_page.m_aEntriesInPage;
+		for (auto it = entries.begin(); it != entries.end(); ++it)
+		{
+			auto nameWithoutPath = it->m_szName.substr(0, it->m_szName.find_first_of('#'));
+			if (nameWithoutPath == id->second)
+			{
+				entries.erase(it);
+				break;
+			}
+		}
+
+		delete id;
 	}
 
 }

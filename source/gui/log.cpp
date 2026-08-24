@@ -28,8 +28,9 @@ void eLog::Message(const char* function, const char* format, ...)
 
 	va_list args;
 	va_start(args, format);
-	vsprintf(msg, format, args);
+	vsnprintf(msg, sizeof(msg), format, args);
 	va_end(args);
+	msg[sizeof(msg) - 1] = '\0'; // guarantee termination on truncation
 
 	FILE* log = _wfopen(path, L"a+");
 

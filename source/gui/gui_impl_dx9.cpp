@@ -1,6 +1,8 @@
 #include "gui_impl_dx9.h"
 
+#include <string>
 #include "log.h"
+#include "config.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_win32.h"
 #include "imgui/imgui_impl_dx9.h"
@@ -25,6 +27,8 @@ void GUIImplementationDX9::Shutdown()
 
 bool GUIImplementationDX9::ImGui_Init(LPDIRECT3DDEVICE9 pDevice)
 {
+	DebugMenuConfig::Get().Load();
+
 	if (!ImGui::CreateContext())
 	{
 		eLog::Message(__FUNCTION__, "Failed to create ImGui context!");
@@ -34,6 +38,32 @@ bool GUIImplementationDX9::ImGui_Init(LPDIRECT3DDEVICE9 pDevice)
 	ImGui::GetIO().ConfigFlags = ImGuiConfigFlags_NoMouseCursorChange;
 	ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 	ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+	// By default ImGui writes "imgui.ini" to the process's current working directory,
+	// which is unpredictable for a game DLL (depends on how the game/launcher was started).
+	// Point it at a fixed, static location next to the DLL instead, or disable saving
+	// entirely per the config.
+	static std::string s_iniPathUtf8;
+	if (DebugMenuConfig::Get().m_bSaveWindowPosition)
+	{
+		wchar_t modulePath[MAX_PATH];
+		GetModuleFileNameW(NULL, modulePath, MAX_PATH);
+		wchar_t* end = wcsrchr(modulePath, L'\\');
+		if (end)
+			end[1] = 0x00;
+
+		std::wstring wIniPath = std::wstring(modulePath) + L"debugmenu_imgui.ini";
+
+		int size = WideCharToMultiByte(CP_UTF8, 0, wIniPath.c_str(), -1, NULL, 0, NULL, NULL);
+		s_iniPathUtf8.resize(size);
+		WideCharToMultiByte(CP_UTF8, 0, wIniPath.c_str(), -1, s_iniPathUtf8.data(), size, NULL, NULL);
+
+		ImGui::GetIO().IniFilename = s_iniPathUtf8.c_str();
+	}
+	else
+	{
+		ImGui::GetIO().IniFilename = NULL; // disable window-state persistence entirely
+	}
 
 	if (!ImGui_ImplWin32_Init(ms_hWindow))
 	{
@@ -74,7 +104,7 @@ void GUIImplementationDX9::ImGui_SetStyle()
 void GUIImplementationDX9::ImGui_ReloadFont()
 {
 	float fontSize = 16.0f;
-	float fMenuScale = 1.0f/*SettingsMgr->fMenuScale*/;
+	float fMenuScale = DebugMenuConfig::Get().m_fontScale;
 	ImGuiStyle* style = &ImGui::GetStyle();
 	ImGuiIO io = ImGui::GetIO();
 	io.Fonts->Clear();
@@ -121,7 +151,7 @@ void GUIImplementationDX9::InputWatcher()
 LRESULT WINAPI GUIImplementationDX9::WndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	if (uMsg == WM_KEYDOWN)
-		if ((GetKeyState(VK_CONTROL) & 0x8000) && wParam == 'M' && TheMenu.m_bCanBeActivated)
+		if (DebugMenuConfig::Get().IsToggleCombo(wParam) && TheMenu.m_bCanBeActivated)
 			TheMenu.OnActivate();
 
 	if (TheMenu.m_bIsActive)

@@ -14,36 +14,62 @@
 #include "gui/dx9hook.h"
 #include "gui/imgui/imgui.h"
 #include "debugmenu.h"
+#include <utility>
 
 using namespace plugin;
 
-injector::memory_pointer_raw CPadUpdateCall;
+// One saved original per call site. Reading the original from a single site and installing
+// that at every other site hands whatever hooked THAT site the job of updating the pad at
+// call sites it never patched - and if its hook is not a plain pass-through, every one of
+// those sites breaks. SkyUI.asi hooks 0x53BEE6 in SA with a one-shot initialiser that
+// returns without calling CPad::UpdatePads once it has run, which is exactly that case.
+static void (*CPadUpdateCall[16])();
 
-void __cdecl CPad__UpdatePadsHook()
+static bool DebugMenuHandledPad()
 {
-	if (TheMenu.m_bIsActive) {
-		// Clear mouse data so the camera won't move when closing the debug menu
-		CPad* pad = CPad::GetPad(0);
-		CPad::UpdatePads();
-		CPad::NewMouseControllerState.x = 0.0f;
-		CPad::NewMouseControllerState.y = 0.0f;
-		pad->NewMouseControllerState.x = 0.0f;
-		pad->NewMouseControllerState.y = 0.0f;
+	if (!TheMenu.m_bIsActive)
+		return false;
+
+	// Clear mouse data so the camera won't move when closing the debug menu
+	CPad* pad = CPad::GetPad(0);
+	CPad::UpdatePads();
+	CPad::NewMouseControllerState.x = 0.0f;
+	CPad::NewMouseControllerState.y = 0.0f;
+	pad->NewMouseControllerState.x = 0.0f;
+	pad->NewMouseControllerState.y = 0.0f;
 #ifdef GTA3
-		pad->ClearMouseHistory();
+	pad->ClearMouseHistory();
 #else
-		CPad::ClearMouseHistory();
+	CPad::ClearMouseHistory();
 #endif
 
-		pad->NewState.DPadUp = 0;
-		pad->OldState.DPadUp = 0;
-		pad->NewState.DPadDown = 0;
-		pad->OldState.DPadDown = 0;
-		pad->DisablePlayerControls = true;
-		return;
-	}
-	else
-		reinterpret_cast<void(*)()>(CPadUpdateCall.as_int())();
+	pad->NewState.DPadUp = 0;
+	pad->OldState.DPadUp = 0;
+	pad->NewState.DPadDown = 0;
+	pad->OldState.DPadDown = 0;
+	pad->DisablePlayerControls = true;
+	return true;
+}
+
+template<size_t I>
+void __cdecl CPad__UpdatePadsHook()
+{
+	if (!DebugMenuHandledPad())
+		CPadUpdateCall[I]();
+}
+
+template<size_t... I>
+static void HookPadCalls(const uintptr_t *sites, std::index_sequence<I...>)
+{
+	((CPadUpdateCall[I] = reinterpret_cast<void(*)()>(injector::ReadRelativeOffset(sites[I] + 1).as_int()),
+	  injector::MakeCALL(sites[I], CPad__UpdatePadsHook<I>)), ...);
+}
+
+template<size_t N>
+static void HookPadCalls(const uintptr_t (&sites)[N])
+{
+	static_assert(N <= sizeof(CPadUpdateCall) / sizeof(CPadUpdateCall[0]), "grow CPadUpdateCall");
+	HookPadCalls(sites, std::make_index_sequence<N>{});
 }
 
 #ifdef GTASA
@@ -79,42 +105,27 @@ public:
 		if (!(h == nullptr)) CloseHandle(h);
 
 #ifdef GTA3
-		CPadUpdateCall = injector::ReadRelativeOffset(0x48C850 + 1);
-
-		injector::MakeCALL(0x48C850, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x48AE15, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x48DE2F, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x48E717, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x582AA9, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x582C3C, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x592C0C, CPad__UpdatePadsHook);
+		static const uintptr_t padCalls[] = {
+			0x48C850, 0x48AE15, 0x48DE2F, 0x48E717, 0x582AA9, 0x582C3C, 0x592C0C
+		};
+		HookPadCalls(padCalls);
 
 		patch::SetPointer(0x61D4E4, SetCursorPosHook);
 #elif GTAVC
-		CPadUpdateCall = injector::ReadRelativeOffset(0x4A4412 + 1); // update pads in cgame proccess
-
-		injector::MakeCALL(0x4A4412, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x490476, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x4A5C7E, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x4A669F, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x4AB0A0, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x54460C, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x5FFFD9, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x60018F, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x61D9F4, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x61DBB6, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x61DD47, CPad__UpdatePadsHook);
+		// update pads in cgame proccess, and everywhere else it is called from
+		static const uintptr_t padCalls[] = {
+			0x4A4412, 0x490476, 0x4A5C7E, 0x4A669F, 0x4AB0A0, 0x54460C,
+			0x5FFFD9, 0x60018F, 0x61D9F4, 0x61DBB6, 0x61DD47
+		};
+		HookPadCalls(padCalls);
 
 		injector::MakeCALL(0x602115, SetCursorPosHook);
 #elif GTASA
-		CPadUpdateCall = injector::ReadRelativeOffset(0x53BEE6 + 1); // update pads in cgame proccess
-
-		injector::MakeCALL(0x53BEE6, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x53E78B, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x57C607, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x57D7C5, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x731540, CPad__UpdatePadsHook);
-		injector::MakeCALL(0x748B17, CPad__UpdatePadsHook);
+		// update pads in cgame proccess, and everywhere else it is called from
+		static const uintptr_t padCalls[] = {
+			0x53BEE6, 0x53E78B, 0x57C607, 0x57D7C5, 0x731540, 0x748B17
+		};
+		HookPadCalls(padCalls);
 
 		injector::MakeCALL(0x53E9F1, RsMouseSetPosHook);
 #endif
